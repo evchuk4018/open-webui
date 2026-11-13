@@ -1,6 +1,6 @@
 # Homelab deployment
 
-This Compose file runs Open WebUI with an Ollama backend on the homelab.
+This Compose file runs Open WebUI as a standalone frontend on the homelab. It does not install or run Ollama; connect a model provider separately when needed.
 
 The service is intentionally passwordless (`WEBUI_AUTH=False`). Access control is provided by the Caddy route, which only permits Tailscale addresses. Anyone who can reach the hostname over the homelab tailnet can use the application, so do not remove that Caddy restriction without adding another access-control layer.
 
@@ -17,7 +17,7 @@ docker compose --env-file deploy/homelab/.env -f deploy/homelab/compose.yaml pul
 docker compose --env-file deploy/homelab/.env -f deploy/homelab/compose.yaml up -d
 ```
 
-The WebUI listens only on `127.0.0.1:3001`; Caddy serves it at `https://ai.wowzerbowser.xyz`. Ollama models are stored in the named `ollama` volume and are not downloaded automatically.
+The WebUI listens only on `127.0.0.1:3001`; Caddy serves it at `https://ai.wowzerbowser.xyz`. Open WebUI data is stored in the named `open-webui` volume.
 
 ## Updating
 
