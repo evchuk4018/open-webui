@@ -21,12 +21,12 @@ The WebUI listens only on `127.0.0.1:3001`; Caddy serves it at `https://ai.wowze
 
 The deployment seeds these OpenAI-compatible connections on a fresh data volume:
 
-- OpenAI / Codex API: `https://api.openai.com/v1`
+- OpenAI API (regular API-key access only): `https://api.openai.com/v1`
 - OpenRouter: `https://openrouter.ai/api/v1`
 - OpenCode Inference: `https://opencode.ai/inference/openai/v1`
 - DeepSeek: `https://api.deepseek.com/v1`
 
-All four key fields start empty so tokens can be added later in Admin Settings → Connections. Open WebUI does not accept a ChatGPT/Codex subscription token as an OpenAI API key; using a Codex subscription would require a separate supported OAuth integration.
+All four key fields start empty so tokens can be added later in Admin Settings → Connections. No Codex API-key connection is seeded: Open WebUI does not accept a ChatGPT/Codex subscription token as an OpenAI API key, so your Codex subscription cannot be used through this regular provider field.
 
 The connection rows are stored in Open WebUI's data volume. The Compose environment also seeds them if that volume is ever initialized from scratch; it never contains provider secrets.
 
