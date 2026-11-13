@@ -26,7 +26,19 @@ The deployment seeds these OpenAI-compatible connections on a fresh data volume:
 - OpenCode Inference: `https://opencode.ai/inference/openai/v1`
 - DeepSeek: `https://api.deepseek.com/v1`
 
-All four key fields start empty so tokens can be added later in Admin Settings → Connections. No Codex API-key connection is seeded: Open WebUI does not accept a ChatGPT/Codex subscription token as an OpenAI API key, so your Codex subscription cannot be used through this regular provider field.
+All four key fields start empty so tokens can be added later in Admin Settings → Connections. ChatGPT/Codex plan usage is a separate per-user connection: do not paste a ChatGPT or Codex subscription token into an API-key field.
+
+## ChatGPT plan sign-in
+
+Open WebUI supports the official Sign in with ChatGPT flow for eligible ChatGPT plan usage. The OAuth callback is a local loopback URL so the homelab does not need another public port. From the computer where you will complete the browser sign-in, keep this tunnel open:
+
+```sh
+ssh -N -L 1455:127.0.0.1:3001 evanh@homelab
+```
+
+Then open Open WebUI → Settings → Connections → Continue with ChatGPT and complete the sign-in in the browser yourself. The tunnel must remain open until the callback page confirms the connection. Open WebUI stores the resulting credentials encrypted on the homelab and never in browser storage.
+
+Plan allowance and per-app limits are controlled by ChatGPT and may be shared with other ChatGPT/Codex usage. Review or change them at [ChatGPT Settings → Usage](https://chatgpt.com/settings/usage). If the callback expires, the browser says it cannot connect, or port `1455` is busy, close the old tunnel, run the SSH command again, and start a fresh sign-in. Keep the URI as `127.0.0.1` (not `localhost`) and leave the SSH terminal open. If plan usage was not approved, reconnect and approve the plan-usage permission; disconnecting removes the local encrypted credential and attempts remote revocation.
 
 The connection rows are stored in Open WebUI's data volume. The Compose environment also seeds them if that volume is ever initialized from scratch; it never contains provider secrets.
 

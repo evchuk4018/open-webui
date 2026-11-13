@@ -15,6 +15,7 @@ services:
       ENABLE_SIGNUP: "False"
       CORS_ALLOW_ORIGIN: ${WEBUI_URL:-https://ai.wowzerbowser.xyz}
       ANONYMIZED_TELEMETRY: "False"
+      OPENAI_CHATGPT_REDIRECT_URI: ${OPENAI_CHATGPT_REDIRECT_URI:-http://127.0.0.1:1455/api/v1/chatgpt/callback}
       # Seed the OpenAI-compatible connection rows on a fresh data volume.
       # Keys are intentionally empty; add them in Admin Settings after deployment.
       OPENAI_API_BASE_URLS: >-

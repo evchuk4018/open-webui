@@ -881,6 +881,13 @@ BYPASS_PYDUB_PREPROCESSING = USE_SLIM or os.getenv('BYPASS_PYDUB_PREPROCESSING',
 # compatible APIs for endpoints not natively handled by Open WebUI.
 ENABLE_OPENAI_API_PASSTHROUGH = os.getenv('ENABLE_OPENAI_API_PASSTHROUGH', 'False').lower() == 'true'
 
+# Sign in with ChatGPT uses a loopback callback. Remote deployments can bridge
+# this port to the WebUI host with SSH without exposing another public port.
+OPENAI_CHATGPT_REDIRECT_URI = os.getenv(
+    'OPENAI_CHATGPT_REDIRECT_URI',
+    'http://127.0.0.1:1455/api/v1/chatgpt/callback',
+)
+
 WEBUI_AUTH_SIGNOUT_REDIRECT_URL = os.getenv('WEBUI_AUTH_SIGNOUT_REDIRECT_URL', None)
 
 # OAUTH Configuration

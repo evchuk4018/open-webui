@@ -54,6 +54,19 @@ class AuthSessionsTable:
             await db.commit()
             return result
 
+    async def consume(self, session_id: str) -> AuthSessionModel | None:
+        """Read and delete a short-lived browser-auth state in one transaction."""
+        now = int(time.time())
+        async with get_async_db() as db:
+            row = await db.get(AuthSession, session_id)
+            if row is None:
+                return None
+
+            result = AuthSessionModel.model_validate(row) if row.expires_at > now else None
+            await db.delete(row)
+            await db.commit()
+            return result
+
     async def change(self, session_id: str, conditions: list, **values) -> bool:
         async with get_async_db() as db:
             result = await db.execute(

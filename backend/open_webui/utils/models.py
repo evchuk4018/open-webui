@@ -77,12 +77,35 @@ async def fetch_ollama_models(request: Request, user: UserModel = None):
 
 async def fetch_openai_models(request: Request, user: UserModel = None):
     openai_response = await openai.get_all_models(request, user=user)
-    return openai_response['data']
+    chatgpt_models = [model for model in openai_response['data'] if model.get('chatgpt_plan')]
+    request.state.chatgpt_models = chatgpt_models
+    return [model for model in openai_response['data'] if not model.get('chatgpt_plan')]
+
+
+async def fetch_chatgpt_models(request: Request, user: UserModel = None):
+    """Fetch per-user ChatGPT-plan models outside the shared base-model cache."""
+    if user is None:
+        return []
+
+    current_models = getattr(request.app.state, 'OPENAI_MODELS', {}) or {}
+    fetched = getattr(request.state, 'chatgpt_models', None)
+    if fetched is None:
+        fetched = await openai.get_chatgpt_models(user)
+    request.app.state.OPENAI_MODELS = {
+        model_id: model
+        for model_id, model in current_models.items()
+        if not (model.get('chatgpt_plan') and model.get('info', {}).get('user_id') == user.id)
+    }
+    request.app.state.OPENAI_MODELS.update({model['id']: model for model in fetched})
+    return fetched
 
 
 async def get_all_base_models(request: Request, user: UserModel = None):
     config = await Config.get_many('openai.enable', 'ollama.enable')
-    openai_task = fetch_openai_models(request, user) if config.get('openai.enable') else asyncio.sleep(0, result=[])
+    # fetch_openai_models filters out per-user ChatGPT-plan models. Calling it
+    # even when API-key OpenAI is disabled keeps ChatGPT sign-in independent of
+    # the global OpenAI API switch while preserving the existing base catalog.
+    openai_task = fetch_openai_models(request, user)
     ollama_task = fetch_ollama_models(request, user) if config.get('ollama.enable') else asyncio.sleep(0, result=[])
     function_task = get_function_models(request)
 
@@ -158,6 +181,12 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
                 await redis.set(BASE_MODELS_CACHE_KEY, JSONCodec.dumps(base_models))
         else:
             base_models = request.app.state.BASE_MODELS
+
+    # Do not put user credentials or user-specific model entries in the shared
+    # base-model cache. The final per-request model set contains only the
+    # current user's ChatGPT-plan catalog.
+    base_models = [model for model in base_models if not model.get('chatgpt_plan')]
+    base_models.extend(await fetch_chatgpt_models(request, user))
 
     # deep copy the base models to avoid modifying the original list
     models = [model.copy() for model in base_models]
@@ -525,6 +554,11 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
 
 
 async def check_model_access(user, model, model_info=None, db=None):
+    if model.get('chatgpt_plan'):
+        if model.get('info', {}).get('user_id') != user.id:
+            raise Exception('Model not found')
+        return
+
     if model.get('arena'):
         meta = model.get('info', {}).get('meta', {})
         access_grants = meta.get('access_grants', [])

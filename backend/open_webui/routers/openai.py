@@ -41,6 +41,12 @@ from open_webui.models.users import UserModel
 from open_webui.utils.access_control import check_model_access, has_connection_access, has_permission
 from open_webui.utils.anthropic import ANTHROPIC_VERSION, get_anthropic_models, is_anthropic_url
 from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.chatgpt import (
+    CHATGPT_MODEL_PROVIDER,
+    ChatGPTError,
+    generate_chatgpt_completion,
+    list_chatgpt_models,
+)
 from open_webui.utils.headers import get_headers_and_cookies, include_user_info_headers
 from open_webui.utils.json_codec import JSONCodec
 from open_webui.utils.misc import convert_logit_bias_input_to_json, get_provider_function, merge_tool_call_batches
@@ -700,6 +706,11 @@ async def get_filtered_models(models, user, db=None):
     return filtered_models
 
 
+async def get_chatgpt_models(user: UserModel) -> list[dict]:
+    """Return the current user's ChatGPT-plan model catalog in Open WebUI format."""
+    return await list_chatgpt_models(user.id)
+
+
 @cached(
     ttl=MODELS_CACHE_TTL,
     # key_builder (not key) is the per-call hook in aiocache 0.12; `key=` is a
@@ -710,11 +721,7 @@ async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
     log.info('get_all_models()')
 
     enable_openai_api, api_base_urls, _, api_configs = await get_openai_runtime_config()
-    if not enable_openai_api:
-        request.app.state.OPENAI_MODELS = {}
-        return {'data': []}
-
-    responses = await get_all_models_responses(request, user=user)
+    responses = await get_all_models_responses(request, user=user) if enable_openai_api else []
 
     def extract_data(response):
         if response and 'data' in response:
@@ -768,6 +775,18 @@ async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
         return models
 
     models = get_merged_models(map(extract_data, responses))
+
+    # ChatGPT-plan models are per-user OAuth resources, not indexed global
+    # API-key connections. Keep them in the OpenAI model registry so the
+    # completion route can resolve their provider without inventing a URL index.
+    if user is not None:
+        try:
+            for chatgpt_model in await get_chatgpt_models(user):
+                models[chatgpt_model['id']] = chatgpt_model
+        except ChatGPTError as exc:
+            if exc.status_code not in (401, 403):
+                log.warning('ChatGPT model discovery failed: %s', exc.code)
+
     log.debug('models: %s', models)
 
     request.app.state.OPENAI_MODELS = models
@@ -780,7 +799,7 @@ async def get_models(request: Request, url_idx: int | None = None, user=Depends(
     if url_idx is not None and user.role != 'admin':
         raise HTTPException(status_code=401, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
-    if not await Config.get('openai.enable'):
+    if url_idx is not None and not await Config.get('openai.enable'):
         raise HTTPException(status_code=503, detail='OpenAI API is disabled')
 
     models = {
@@ -1408,7 +1427,8 @@ async def generate_chat_completion(
     form_data: dict,
     user=Depends(get_verified_user),
 ):
-    if not await Config.get('openai.enable'):
+    model_id = form_data.get('model', '')
+    if not await Config.get('openai.enable') and not str(model_id).startswith('chatgpt.'):
         raise HTTPException(status_code=503, detail='OpenAI API is disabled')
 
     # Let DB helpers own short-lived sessions so remote calls and streams do not hold pool connections.
@@ -1453,23 +1473,35 @@ async def generate_chat_completion(
 
         await check_model_access(user, model_info, bypass_filter)
     else:
-        await check_model_access(user, None, bypass_filter)
+        # ChatGPT-plan models are dynamically registered for the current user
+        # and intentionally do not have a row in the global Models table.
+        if not str(model_id).startswith('chatgpt.'):
+            await check_model_access(user, None, bypass_filter)
 
     # Check if model is already in app state cache to avoid expensive get_all_models() call
     models = request.app.state.OPENAI_MODELS
     if not models or model_id not in models:
-        await get_all_models(request, user=user)
+        model_response = await get_all_models(request, user=user)
         models = request.app.state.OPENAI_MODELS
+        if model_id not in models:
+            models = {model['id']: model for model in model_response.get('data', [])}
     model = models.get(model_id)
 
-    if model:
-        idx = model['urlIdx']
-    else:
+    if not model:
         raise HTTPException(
             status_code=404,
             detail=ERROR_MESSAGES.MODEL_NOT_FOUND(),
         )
 
+    if model.get('provider') == CHATGPT_MODEL_PROVIDER or model.get('chatgpt_plan'):
+        if model.get('info', {}).get('user_id') != user.id:
+            raise HTTPException(
+                status_code=404,
+                detail=ERROR_MESSAGES.MODEL_NOT_FOUND(),
+            )
+        return await generate_chatgpt_completion(request, payload, user, model)
+
+    idx = model['urlIdx']
     url, key, api_config = await get_openai_connection(idx)
 
     prefix_id = api_config.get('prefix_id', None)
@@ -1834,9 +1866,16 @@ async def responses(
     if model_id:
         models = request.app.state.OPENAI_MODELS
         if not models or model_id not in models:
-            await get_all_models(request, user=user)
+            model_response = await get_all_models(request, user=user)
             models = request.app.state.OPENAI_MODELS
+            if model_id not in models:
+                models = {model['id']: model for model in model_response.get('data', [])}
         if model_id in models:
+            if models[model_id].get('chatgpt_plan'):
+                raise HTTPException(
+                    status_code=400,
+                    detail='ChatGPT-plan models are available through the chat completions endpoint.',
+                )
             idx = models[model_id]['urlIdx']
 
     url, key, api_config = await get_openai_connection(idx)
