@@ -1,0 +1,33 @@
+name: open-webui
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: open-webui-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG:-main}
+    container_name: open-webui
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - 127.0.0.1:${OPEN_WEBUI_PORT:-3001}:8080
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      WEBUI_URL: ${WEBUI_URL:-https://ai.wowzerbowser.xyz}
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?Set WEBUI_SECRET_KEY in .env}
+      WEBUI_AUTH: "False"
+      ENABLE_LOGIN_FORM: "False"
+      ENABLE_SIGNUP: "False"
+      CORS_ALLOW_ORIGIN: ${WEBUI_URL:-https://ai.wowzerbowser.xyz}
+      ANONYMIZED_TELEMETRY: "False"
+    volumes:
+      - open-webui:/app/backend/data
+
+volumes:
+  ollama:
+  open-webui:
