@@ -19,6 +19,17 @@ docker compose --env-file deploy/homelab/.env -f deploy/homelab/compose.yaml up 
 
 The WebUI listens only on `127.0.0.1:3001`; Caddy serves it at `https://ai.wowzerbowser.xyz`. Open WebUI data is stored in the named `open-webui` volume.
 
+The deployment seeds these OpenAI-compatible connections on a fresh data volume:
+
+- OpenAI / Codex API: `https://api.openai.com/v1`
+- OpenRouter: `https://openrouter.ai/api/v1`
+- OpenCode Inference: `https://opencode.ai/inference/openai/v1`
+- DeepSeek: `https://api.deepseek.com/v1`
+
+All four key fields start empty so tokens can be added later in Admin Settings → Connections. Open WebUI does not accept a ChatGPT/Codex subscription token as an OpenAI API key; using a Codex subscription would require a separate supported OAuth integration.
+
+The connection rows are stored in Open WebUI's data volume. The Compose environment also seeds them if that volume is ever initialized from scratch; it never contains provider secrets.
+
 ## Updating
 
 ```sh
